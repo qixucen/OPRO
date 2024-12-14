@@ -2,12 +2,12 @@
 from opro.config import OPROConfig
 from opro.api import OPRO
 from opro.dataset import Dataset
-
+import os
 def main():
     # Example usage of enhanced OPRO
     config = OPROConfig(
-        base_url="https://oneapi.deepwisdom.ai/",
-        api_key="sk-7kroxV4tTVYWDNFw8c1b40Cb88684d5d88E49dA9Fe413737"
+        base_url=os.getenv("BASE_URL"),
+        api_key=os.getenv("API_KEY")
     )
     
     # Initialize OPRO with config
