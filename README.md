@@ -1,4 +1,4 @@
-# Enhanced OPRO Implementation
+# Enhanced OPRO Implementation (Currently, this repo is for my personal use only, so the README may not be updated in a timely manner.)
 
 This is an enhanced version of the [OPRO (Large Language Models as Optimizers)](https://github.com/google-deepmind/opro) library, providing additional features and improved usability.
 
