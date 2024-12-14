@@ -2,25 +2,25 @@
 from opro.config import OPROConfig
 from opro.api import OPRO
 from opro.dataset import Dataset
-import os
+from config import base_url, api_key
 
 def main():
     # Example usage of enhanced OPRO
     config = OPROConfig(
-        base_url=os.getenv("BASE_URL"),
-        api_key=os.getenv("API_KEY")
+        base_url=base_url,
+        api_key=api_key
     )
     
     # Initialize OPRO with config
     opro = OPRO(config)
     
     # Example dataset
-    dataset = Dataset.from_json("dataset/hotpotqa.json")
+    dataset = Dataset("hotpotqa")
     
     # Run optimization
     result = opro.optimize(
-        dataset=dataset,
-        metric="accuracy",
+        dataset=dataset.get_data(),
+        metric="f1",
         n_trials=10
     )
     

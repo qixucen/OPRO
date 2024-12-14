@@ -56,22 +56,23 @@ class OPRO:
     
     def evaluate_prompt(self, prompt: str, dataset: Dataset, metric: str = "accuracy") -> float:
         """Evaluate a prompt with multiple metric options."""
-        if metric == "accuracy":
-            return self._evaluate_accuracy(prompt, dataset)
+        if metric == "f1":
+            return self._evaluate_f1(prompt, dataset)
+        elif metric == "code":
+            return self._evaluate_code(prompt, dataset)
         elif metric == "number_included_accuracy":
             return self._evaluate_number_accuracy(prompt, dataset)
-        # ... add more metrics ...
     
     def optimize(
         self,
         dataset: Dataset,
-        metric: str = "accuracy",
+        metric: str = "f1",
         n_trials: int = 10,
         initial_prompt: Optional[str] = None
     ) -> OptimizationResult:
         """Optimize prompt using the dataset."""
         if initial_prompt is None:
-            initial_prompt = "You are a helpful assistant. Please provide a response."
+            initial_prompt = "Solve the problem."
         
         prompts = [initial_prompt]
         scores = []
@@ -102,26 +103,4 @@ class OPRO:
             "Given the context, " + base_prompt
         ]
         
-        # Add support for meta-prompt based generation
-        if self.config.use_meta_prompt:
-            return self._generate_with_meta_prompt(base_prompt)
-        
-        # Add support for evolutionary strategies    
-        if self.config.use_evolution:
-            return self._evolve_prompt(base_prompt)
-        
-        # Fallback to simple template variations
         return np.random.choice(variations)
-    
-    def _save_optimization_results(self, results: OptimizationResult):
-        """Save detailed optimization results."""
-        if not self.config.save_results:
-            return
-        
-        # Save results in a structured format
-        results_dict = {
-            "meta_prompts": self.meta_prompts,
-            "optimization_history": self.history,
-            "evaluation_results": self.eval_results
-        }
-        # ... save to file ...

@@ -47,3 +47,7 @@ Desktop.ini
 
 # Documentation builds
 docs/_build/
+config.py
+
+# Dataset
+dataset/

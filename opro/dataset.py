@@ -4,48 +4,69 @@ import jsonlines
 from typing import List, Dict, Any, Union
 import pandas as pd
 
+
+def context_adapt(obj: dict):
+    context = []
+    for i in range(len(obj["context"]["sentences"])):
+        context.append(" ".join(obj["context"]["sentences"][i]))
+    return context
 class Dataset:
     """Enhanced dataset interface for OPRO."""
     
-    def __init__(self, data: List[Dict[str, Any]]):
-        self.data = data
-        self._validate_data()
-    
-    def _validate_data(self):
-        """Validate dataset format."""
-        if not self.data:
-            raise ValueError("Dataset cannot be empty")
+    def __init__(self, dataset_name: str, dataset_path: str=None):
+        self.dataset_name = dataset_name
+        if not dataset_path:
+            if dataset_name == "hotpotqa":
+                dataset_path = "dataset/hotpotqa.json"
+            elif dataset_name == "drop":
+                dataset_path = "dataset/drop.json"
+            elif dataset_name == "aime":
+                dataset_path = "dataset/aime.json"
+            else:
+                raise ValueError(f"Unsupported dataset: {dataset_name}")
+        # 适配不同文件格式的读取
+        try:
+            if dataset_name.endswith('.jsonl'):
+                with jsonlines.open(dataset_path) as reader:
+                    self.data = [obj for obj in reader]
+            else:
+                with open(dataset_path, 'r') as f:
+                    self.data = json.load(f)
+        except Exception as e:
+            raise Exception(f"Failed to load dataset: {str(e)}")
         
-        required_keys = {'input', 'output'}
-        for item in self.data:
-            if not all(key in item for key in required_keys):
-                raise ValueError(f"Each item must contain keys: {required_keys}")
-    
-    @classmethod
-    def from_jsonl(cls, file_path: str) -> 'Dataset':
-        """Load dataset from JSONL file."""
-        data = []
-        with jsonlines.open(file_path) as reader:
-            for item in reader:
-                data.append(item)
-        return cls(data)
-    
-    @classmethod
-    def from_json(cls, file_path: str) -> 'Dataset':
-        """Load dataset from JSON file."""
-        with open(file_path, 'r') as f:
-            data = json.load(f)
-        return cls(data)
-    
-    @classmethod
-    def from_pandas(cls, df: pd.DataFrame) -> 'Dataset':
-        """Create dataset from pandas DataFrame."""
-        if not all(col in df.columns for col in ['input', 'output']):
-            raise ValueError("DataFrame must contain 'input' and 'output' columns")
-        return cls(df.to_dict('records'))
-    
-    def __len__(self) -> int:
-        return len(self.data)
-    
-    def __getitem__(self, idx: Union[int, slice]) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
-        return self.data[idx]
+        self.adapt()
+
+
+    def adapt(self):
+        """Adapt different datasets to a standard format with 'input' and 'output' keys"""
+        if self.dataset_name == "hotpotqa":
+            adapted_data = []
+            for item in self.data:
+                adapted_item = {
+                    "input": f"context: {context_adapt(item)} \n question: {item['question']}",
+                    "output": item["answer"]
+                }
+                adapted_data.append(adapted_item)
+            self.data = adapted_data
+            
+        elif self.dataset_name == "drop":
+            adapted_data = []
+            for item in self.data:
+                adapted_item = {
+                    "input": f"context: {item['context']} \n question: {item['question']}",
+                    "output": item['completion'] if 'completion' in item else item['ref_text']
+                }
+                adapted_data.append(adapted_item)
+            self.data = adapted_data
+            
+        elif self.dataset_name == "aime":
+            pass # TODO
+            
+        else:
+            # 如果数据集已经是标准格式，则不需要适配
+            if not all("input" in item and "output" in item for item in self.data):
+                raise ValueError(f"Unsupported dataset format: {self.dataset_name}")
+            
+    def get_data(self):
+        return self.data
