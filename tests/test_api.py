@@ -32,20 +32,20 @@ class TestOPRO(unittest.TestCase):
         }
         mock_post.return_value = mock_response
 
-        response = self.opro._make_request("test prompt", "test input")
+        response = self.opro._llm_gen("test prompt", "test input")
         self.assertEqual(response, "test response")
 
         # Test failed request
         mock_response.status_code = 400
         mock_response.text = "Error"
         with self.assertRaises(Exception):
-            self.opro._make_request("test prompt", "test input")
+            self.opro._llm_gen("test prompt", "test input")
 
     @patch('opro.api.OPRO._make_request')
     def test_evaluate_prompt(self, mock_make_request):
         """Test prompt evaluation."""
         mock_make_request.return_value = "test output"
-        score = self.opro.evaluate_prompt(
+        score = self.opro.evaluate_instruction(
             "test prompt",
             self.test_dataset,
             "accuracy"
@@ -54,7 +54,7 @@ class TestOPRO(unittest.TestCase):
 
         # Test invalid metric
         with self.assertRaises(ValueError):
-            self.opro.evaluate_prompt(
+            self.opro.evaluate_instruction(
                 "test prompt",
                 self.test_dataset,
                 "invalid_metric"

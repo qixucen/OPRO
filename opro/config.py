@@ -1,6 +1,12 @@
 # opro/config.py
 from pydantic import BaseModel, Field
+import aiohttp
 from typing import Optional
+import backoff  # 用于重试机制
+
+class APIError(Exception):
+    """Base exception for API errors"""
+    pass
 
 class OPROConfig(BaseModel):
     """Configuration class for OPRO."""

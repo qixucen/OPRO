@@ -1,8 +1,6 @@
 # opro/dataset.py
 import json
 import jsonlines
-from typing import List, Dict, Any, Union
-import pandas as pd
 
 
 def context_adapt(obj: dict):
@@ -13,17 +11,8 @@ def context_adapt(obj: dict):
 class Dataset:
     """Enhanced dataset interface for OPRO."""
     
-    def __init__(self, dataset_name: str, dataset_path: str=None):
+    def __init__(self, dataset_name: str, dataset_path: str):
         self.dataset_name = dataset_name
-        if not dataset_path:
-            if dataset_name == "hotpotqa":
-                dataset_path = "dataset/hotpotqa.json"
-            elif dataset_name == "drop":
-                dataset_path = "dataset/drop.json"
-            elif dataset_name == "aime":
-                dataset_path = "dataset/aime.json"
-            else:
-                raise ValueError(f"Unsupported dataset: {dataset_name}")
         # 适配不同文件格式的读取
         try:
             if dataset_name.endswith('.jsonl'):
@@ -59,12 +48,12 @@ class Dataset:
                 }
                 adapted_data.append(adapted_item)
             self.data = adapted_data
-            
+        
+        # TODO: 适配更多数据集
         elif self.dataset_name == "aime":
-            pass # TODO
+            pass 
             
         else:
-            # 如果数据集已经是标准格式，则不需要适配
             if not all("input" in item and "output" in item for item in self.data):
                 raise ValueError(f"Unsupported dataset format: {self.dataset_name}")
             

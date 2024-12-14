@@ -1,10 +1,11 @@
 # main.py
+import asyncio
 from opro.config import OPROConfig
 from opro.api import OPRO
 from opro.dataset import Dataset
 from config import base_url, api_key
 
-def main():
+async def main():
     # Example usage of enhanced OPRO
     config = OPROConfig(
         base_url=base_url,
@@ -15,13 +16,12 @@ def main():
     opro = OPRO(config)
     
     # Example dataset
-    dataset = Dataset("hotpotqa")
+    dataset = Dataset("hotpotqa", "dataset/hotpotqa.json")
     
     # Run optimization
-    result = opro.optimize(
+    result = await opro.optimize(
         dataset=dataset.get_data(),
         metric="f1",
-        n_trials=10
     )
     
     print("Optimization Results:")
@@ -29,4 +29,4 @@ def main():
     print(f"Best score: {result.best_score}")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
