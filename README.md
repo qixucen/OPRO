@@ -1,6 +1,6 @@
 # Enhanced OPRO Implementation
 
-This is an enhanced version of the [OPRO (Optimization of Prompts)](https://github.com/google-deepmind/opro) library, providing additional features and improved usability.
+This is an enhanced version of the [OPRO (Large Language Models as Optimizers)](https://github.com/google-deepmind/opro) library, providing additional features and improved usability.
 
 ## Features
 

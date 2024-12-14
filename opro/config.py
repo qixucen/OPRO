@@ -1,8 +1,5 @@
 # opro/config.py
 from pydantic import BaseModel, Field
-import aiohttp
-from typing import Optional
-import backoff  # 用于重试机制
 
 class APIError(Exception):
     """Base exception for API errors"""
@@ -17,20 +14,24 @@ class OPROConfig(BaseModel):
     api_key: str = Field(
         description="API key for authentication"
     )
-    model: str = Field(
+    optimization_model: str = Field(
         default="gpt-3.5-turbo",
         description="Model to use for optimization"
     )
+    execution_model: str = Field(
+        default="gpt-3.5-turbo",
+        description="Model to use for execution"
+    )
     max_tokens: int = Field(
-        default=150,
+        default=None,
         description="Maximum number of tokens in completion"
     )
     temperature: float = Field(
-        default=0.7,
+        default=1,
         description="Sampling temperature"
     )
     timeout: int = Field(
-        default=30,
+        default=5,
         description="API request timeout in seconds"
     )
     

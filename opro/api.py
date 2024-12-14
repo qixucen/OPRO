@@ -1,8 +1,8 @@
 # opro/api.py
 import aiohttp
-import backoff
 import asyncio
 import random
+import numpy as np
 from typing import List, Optional
 from tqdm import tqdm
 from .config import OPROConfig
@@ -11,6 +11,14 @@ from .utils import parse_tag_content, evaluate_f1, evaluate_code, evaluate_numbe
 
 
 example_num = 3
+max_retries = 3
+resample_num = 8
+total_optimization_prompt_tokens = 0
+total_optimization_completion_tokens = 0
+total_execution_prompt_tokens = 0
+total_execution_completion_tokens = 0
+optimization_log = []
+
 class OptimizationResult:
     def __init__(
         self,
@@ -23,7 +31,16 @@ class OptimizationResult:
         self.best_score = best_score
         self.all_prompts = all_prompts
         self.all_scores = all_scores
-
+        global total_optimization_prompt_tokens
+        global total_optimization_completion_tokens
+        global total_execution_prompt_tokens
+        global total_execution_completion_tokens
+        global optimization_log
+        self.total_optimization_prompt_tokens = total_optimization_prompt_tokens
+        self.total_optimization_completion_tokens = total_optimization_completion_tokens
+        self.total_execution_prompt_tokens = total_execution_prompt_tokens
+        self.total_execution_completion_tokens = total_execution_completion_tokens
+        optimization_log = optimization_log
 
 class OPRO:
     """Enhanced OPRO implementation with configurable endpoints."""
@@ -37,7 +54,7 @@ class OPRO:
         if not self.config.api_key:
             raise ValueError("API key is required")
 
-    async def _llm_gen(self, prompt: str) -> str:
+    async def _llm_gen(self, prompt: str, mode:str) -> str:
         """Make async API request with configurable endpoint."""
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
@@ -45,7 +62,7 @@ class OPRO:
         }
 
         data = {
-            "model": self.config.model,
+            "model": self.config.optimization_model if mode == "optimization" else self.config.execution_model,
             "messages": [
                 {"role": "user", "content": prompt},
             ],
@@ -53,37 +70,63 @@ class OPRO:
             "temperature": self.config.temperature,
         }
 
-        @backoff.on_exception(backoff.expo, (aiohttp.ClientError, asyncio.TimeoutError))
-        async def make_request():
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.config.base_url}/chat/completions",
-                    headers=headers,
-                    json=data,
-                    timeout=aiohttp.ClientTimeout(total=self.config.timeout)
-                ) as response:
-                    if response.status != 200:
-                        raise Exception(f"API request failed: {await response.text()}")
-                    result = await response.json()
-                    return result["choices"][0]["message"]["content"]
+        errors = []
+        MAX_RETRIES = 3
+        DEFAULT_RETRY_AFTER = 1
 
-        return await make_request()
+        for retry in range(MAX_RETRIES):
+            try:
+                async with asyncio.timeout(30):
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            f"{self.config.base_url}/chat/completions",
+                            headers=headers,
+                            json=data
+                        ) as response:
+                            if response.status != 200:
+                                raise Exception(f"API request failed: {await response.text()}")
+                            result = await response.json()
+                            if mode == "optimization":
+                                global total_optimization_prompt_tokens
+                                global total_optimization_completion_tokens
+                                total_optimization_prompt_tokens += result["usage"]["prompt_tokens"]
+                                total_optimization_completion_tokens += result["usage"]["completion_tokens"]
+                            elif mode == "execution":
+                                global total_execution_prompt_tokens
+                                global total_execution_completion_tokens
+                                total_execution_prompt_tokens += result["usage"]["prompt_tokens"]
+                                total_execution_completion_tokens += result["usage"]["completion_tokens"]
+                            return result["choices"][0]["message"]["content"]
+                            
+            except asyncio.TimeoutError:
+                errors.append("Request timeout")
+            except aiohttp.ClientError as e:
+                errors.append(f"Client error: {str(e)}")
+            except Exception as e:
+                errors.append(f"Error: {type(e).__name__}, {str(e)}")
+            
+            await asyncio.sleep(DEFAULT_RETRY_AFTER * (2 ** retry))
+        
+        print(f"Error log: {errors}")
+        raise Exception("Max retries exceeded")
     
     async def evaluate_instruction(
-        self, instruction: str, dataset: Dataset, metric: str = "accuracy"
+        self, instruction: str, dataset: Dataset, metric_name: str = "f1"
     ) -> float:
         """Evaluate a prompt with multiple metric options."""
         answers = await asyncio.gather(*[self.generate_answer(instruction, item["input"]) for item in dataset])
-        if metric == "f1":
+        if metric_name == "f1":
             metric = evaluate_f1
-        elif metric == "code":
+        elif metric_name == "code":
             metric = evaluate_code
-        elif metric == "number":
+        elif metric_name == "number":
             metric = evaluate_number
         scores = [metric(answer, item["output"]) for answer, item in zip(answers, dataset)]
         score = sum(scores) / len(scores)
+        examples = [(item["input"], item["output"]) for item, score in zip(dataset, scores) if score < 1]
+        examples = random.sample(examples, example_num)
         
-        return score
+        return score, examples
     
     def get_prompt(self, instruction: str, input_text: str):
         return f"Q: {input_text}\nA: {instruction}\n Generate the answer above. The answer should begin with <ANS> and end with </ANS>."
@@ -95,19 +138,21 @@ class OPRO:
         return parse_tag_content(response, "<ANS>", "</ANS>")
     
     async def generate_answer(self, instruction: str, input_text: str):
-        while True:
-            response = await self._llm_gen(self.get_prompt(instruction, input_text))
+        for _ in range(max_retries):
+            response = await self._llm_gen(self.get_prompt(instruction, input_text), "execution")
             answer = self.extract_answer(response)
             if answer != []:
                 answer = answer[0]
                 break
+            else:
+                answer = ""
         return answer
 
     async def optimize(
         self,
         dataset: Dataset,
-        metric: str = "f1",
-        n_trials: int = 200,
+        metric_name: str = "f1",
+        n_trials: int = 10,
         initial_prompt: Optional[str] = None,
     ) -> OptimizationResult:
         """Optimize prompt using the dataset."""
@@ -119,17 +164,40 @@ class OPRO:
 
         best_prompt = initial_prompt
         best_score = float("-inf")
-        instructions_and_scores = [(initial_prompt, await self.evaluate_instruction(initial_prompt, dataset, metric))]
+        score, examples = await self.evaluate_instruction(initial_prompt, dataset, metric_name)
+        instructions_and_scores = [(initial_prompt, score)]
+        max_instructions = max(n_trials // 10, 3)
+        optimization_log.append({
+            "instruction": initial_prompt,
+            "score": score,
+            "examples": examples,
+        })
 
         for _ in tqdm(range(n_trials), desc="Optimizing prompt"):
             # Generate variations of the best prompt
-            while True:
-                current_instruction = await self._llm_gen(self.generate_meta_prompt(instructions_and_scores))
-                current_instruction = self.extract_instruction(current_instruction)
-                if current_instruction != []:
-                    current_instruction = current_instruction[0]
-                    break
-            current_score = await self.evaluate_instruction(current_instruction, dataset, metric)
+            meta_prompt = self.generate_meta_prompt(instructions_and_scores, examples=examples, max_instructions=max_instructions)
+            async def sample_instruction(meta_prompt):
+                for _ in range(max_retries):
+                    current_instructions = await self._llm_gen(meta_prompt, "optimization")
+                    current_instruction = self.extract_instruction(current_instructions)
+                    if current_instruction != []:
+                        current_instruction = current_instruction[0]
+                        break
+                    else:
+                        current_instruction = "Solve the problem"
+                return current_instruction
+            current_instructions = await asyncio.gather(*[sample_instruction(meta_prompt) for _ in range(resample_num)])
+            current_results = await asyncio.gather(*[self.evaluate_instruction(instruction, dataset, metric_name) for instruction in current_instructions])
+            current_scores = [score for score, _ in current_results]
+            current_score = max(current_scores)
+            current_instruction = current_instructions[current_scores.index(current_score)]
+            # print(current_score, current_instruction)
+            current_score, examples = await self.evaluate_instruction(current_instruction, dataset, metric_name)
+            optimization_log.append({
+                "instruction": current_instruction,
+                "score": current_score,
+                "examples": examples,
+            })
 
             prompts.append(current_instruction)
             scores.append(current_score)
@@ -146,7 +214,7 @@ class OPRO:
         self,
         instructions_and_scores: List[tuple], 
         score_threshold: float = 0.1,
-        max_instructions: int = 1000,
+        max_instructions: int = 3,  # max_instructions = n_trials / 10
     ) -> str:
         """Generate formatted string of instruction-score pairs.
         
@@ -173,8 +241,8 @@ class OPRO:
         self,
         instructions_and_scores: List[tuple],
         score_threshold: float = 0.1,
-        max_instructions: int = 1000,
-        dataset: Optional[Dataset] = None,
+        max_instructions: int = 3,
+        examples: List[list] = None,
     ) -> str:
         """Generate meta prompt for instruction optimization."""
         # Generate instruction-score pairs string
@@ -195,15 +263,11 @@ class OPRO:
         meta_prompt += instruction_pairs
 
         # Add examples
-        example_indices = random.sample(range(len(dataset)), example_num)
-        if dataset and example_indices:
-            meta_prompt += "\nBelow are some problems.\n"
-            
-            for idx in example_indices:
-                question = dataset[idx]["input"]
-                answer = dataset[idx]["output"]
-                meta_prompt += f"\ninput:\nQ: <INS>\n{question}\nA:"
-                meta_prompt += f"\nGround truth answer:\n{answer}\n"
+        for item in examples:
+            question = item[0]
+            answer = item[1]
+            meta_prompt += f"\ninput:\nQ: <INS>\n{question}\nA:"
+            meta_prompt += f"\nGround truth answer:\n{answer}\n"
 
         # Add final instruction
         meta_prompt += (

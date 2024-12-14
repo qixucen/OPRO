@@ -1,13 +1,12 @@
-# opro/dataset.py
 import json
 import jsonlines
 
 
 def context_adapt(obj: dict):
     context = []
-    for i in range(len(obj["context"]["sentences"])):
-        context.append(" ".join(obj["context"]["sentences"][i]))
-    return context
+    for i in range(len(obj["context"])):
+        context.append(" ".join(obj["context"][i][1]))
+    return "\n".join(context)
 class Dataset:
     """Enhanced dataset interface for OPRO."""
     
@@ -15,7 +14,7 @@ class Dataset:
         self.dataset_name = dataset_name
         # 适配不同文件格式的读取
         try:
-            if dataset_name.endswith('.jsonl'):
+            if dataset_path.endswith('.jsonl'):
                 with jsonlines.open(dataset_path) as reader:
                     self.data = [obj for obj in reader]
             else:
