@@ -55,24 +55,12 @@ class OPRO:
         return response.json()["choices"][0]["message"]["content"]
     
     def evaluate_prompt(self, prompt: str, dataset: Dataset, metric: str = "accuracy") -> float:
-        """Evaluate a prompt on the dataset."""
-        scores = []
-        
-        for item in dataset:
-            try:
-                prediction = self._make_request(prompt, item["input"])
-                if metric == "accuracy":
-                    score = float(prediction.strip() == item["output"])
-                    scores.append(score)
-                else:
-                    raise ValueError(f"Unsupported metric: {metric}")
-            except ValueError as e:
-                raise e
-            except Exception as e:
-                print(f"Error during evaluation: {str(e)}")
-                scores.append(0.0)
-        
-        return np.mean(scores)
+        """Evaluate a prompt with multiple metric options."""
+        if metric == "accuracy":
+            return self._evaluate_accuracy(prompt, dataset)
+        elif metric == "number_included_accuracy":
+            return self._evaluate_number_accuracy(prompt, dataset)
+        # ... add more metrics ...
     
     def optimize(
         self,
@@ -106,13 +94,34 @@ class OPRO:
         return OptimizationResult(best_prompt, best_score, prompts, scores)
     
     def _generate_prompt_variation(self, base_prompt: str) -> str:
-        """Generate a variation of the base prompt."""
-        # This is a simplified version - in practice, you might want to use
-        # more sophisticated prompt variation strategies
+        """Generate variations of the base prompt using more sophisticated strategies."""
         variations = [
             "Let's approach this step by step. " + base_prompt,
             "Think carefully and " + base_prompt,
             base_prompt + " Be precise and accurate.",
             "Given the context, " + base_prompt
         ]
+        
+        # Add support for meta-prompt based generation
+        if self.config.use_meta_prompt:
+            return self._generate_with_meta_prompt(base_prompt)
+        
+        # Add support for evolutionary strategies    
+        if self.config.use_evolution:
+            return self._evolve_prompt(base_prompt)
+        
+        # Fallback to simple template variations
         return np.random.choice(variations)
+    
+    def _save_optimization_results(self, results: OptimizationResult):
+        """Save detailed optimization results."""
+        if not self.config.save_results:
+            return
+        
+        # Save results in a structured format
+        results_dict = {
+            "meta_prompts": self.meta_prompts,
+            "optimization_history": self.history,
+            "evaluation_results": self.eval_results
+        }
+        # ... save to file ...
